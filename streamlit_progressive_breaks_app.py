@@ -80,69 +80,71 @@ df_range = df[df['range_obs_time'] == selected_range_time].copy()
 st.sidebar.header("🔍 Formation Time Filters")
 st.sidebar.markdown("Filter by **when** high/low formed within the range")
 
-# High formation filter
-high_filter_enabled = st.sidebar.checkbox("Filter High Formation Time", value=False)
-if high_filter_enabled:
-    available_high_times = sorted(df_range['high_time'].unique(), key=time_to_minutes)
-    time_strings = [t.strftime('%H:%M') for t in available_high_times]
-    
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        high_start_idx = st.selectbox(
-            "High Start",
-            range(len(time_strings)),
-            format_func=lambda i: time_strings[i],
-            key='high_start'
-        )
-    with col2:
-        high_end_idx = st.selectbox(
-            "High End",
-            range(len(time_strings)),
-            format_func=lambda i: time_strings[i],
-            index=len(time_strings)-1,
-            key='high_end'
-        )
-    
-    high_start = available_high_times[high_start_idx]
-    high_end = available_high_times[high_end_idx]
-    
-    high_start_min = time_to_minutes(high_start)
-    high_end_min = time_to_minutes(high_end)
-    df_range = df_range[
-        df_range['high_time'].apply(lambda t: high_start_min <= time_to_minutes(t) <= high_end_min)
-    ]
+# High formation filter - ALWAYS VISIBLE
+st.sidebar.subheader("High Formation Time")
+available_high_times = sorted(df_range['high_time'].unique(), key=time_to_minutes)
+time_strings = [t.strftime('%H:%M') for t in available_high_times]
 
-# Low formation filter
-low_filter_enabled = st.sidebar.checkbox("Filter Low Formation Time", value=False)
-if low_filter_enabled:
-    available_low_times = sorted(df_range['low_time'].unique(), key=time_to_minutes)
-    time_strings = [t.strftime('%H:%M') for t in available_low_times]
-    
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        low_start_idx = st.selectbox(
-            "Low Start",
-            range(len(time_strings)),
-            format_func=lambda i: time_strings[i],
-            key='low_start'
-        )
-    with col2:
-        low_end_idx = st.selectbox(
-            "Low End",
-            range(len(time_strings)),
-            format_func=lambda i: time_strings[i],
-            index=len(time_strings)-1,
-            key='low_end'
-        )
-    
-    low_start = available_low_times[low_start_idx]
-    low_end = available_low_times[low_end_idx]
-    
-    low_start_min = time_to_minutes(low_start)
-    low_end_min = time_to_minutes(low_end)
-    df_range = df_range[
-        df_range['low_time'].apply(lambda t: low_start_min <= time_to_minutes(t) <= low_end_min)
-    ]
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    high_start_idx = st.selectbox(
+        "High Start",
+        range(len(time_strings)),
+        format_func=lambda i: time_strings[i],
+        key='high_start'
+    )
+with col2:
+    high_end_idx = st.selectbox(
+        "High End",
+        range(len(time_strings)),
+        format_func=lambda i: time_strings[i],
+        index=len(time_strings)-1,
+        key='high_end'
+    )
+
+high_start = available_high_times[high_start_idx]
+high_end = available_high_times[high_end_idx]
+
+high_start_min = time_to_minutes(high_start)
+high_end_min = time_to_minutes(high_end)
+df_range = df_range[
+    df_range['high_time'].apply(lambda t: high_start_min <= time_to_minutes(t) <= high_end_min)
+]
+
+st.sidebar.info(f"High: {high_start.strftime('%H:%M')} - {high_end.strftime('%H:%M')}")
+
+# Low formation filter - ALWAYS VISIBLE
+st.sidebar.subheader("Low Formation Time")
+available_low_times = sorted(df_range['low_time'].unique(), key=time_to_minutes)
+time_strings = [t.strftime('%H:%M') for t in available_low_times]
+
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    low_start_idx = st.selectbox(
+        "Low Start",
+        range(len(time_strings)),
+        format_func=lambda i: time_strings[i],
+        key='low_start'
+    )
+with col2:
+    low_end_idx = st.selectbox(
+        "Low End",
+        range(len(time_strings)),
+        format_func=lambda i: time_strings[i],
+        index=len(time_strings)-1,
+        key='low_end'
+    )
+
+low_start = available_low_times[low_start_idx]
+low_end = available_low_times[low_end_idx]
+
+low_start_min = time_to_minutes(low_start)
+low_end_min = time_to_minutes(low_end)
+df_range = df_range[
+    df_range['low_time'].apply(lambda t: low_start_min <= time_to_minutes(t) <= low_end_min)
+]
+
+st.sidebar.info(f"Low: {low_start.strftime('%H:%M')} - {low_end.strftime('%H:%M')}")
 
 # Check if we have data
 if len(df_range) == 0:
@@ -155,22 +157,7 @@ total_sessions = len(unique_sessions)
 
 # Key Metrics
 st.header("📊 Key Metrics")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric("Total Sessions", f"{total_sessions:,}")
-with col2:
-    avg_high = unique_sessions.merge(
-        df_range[['date', 'range_obs_time', 'high_value']].drop_duplicates(),
-        on=['date', 'range_obs_time', 'high_value']
-    )['high_value'].mean()
-    st.metric("Avg High", f"{avg_high:.2f}")
-with col3:
-    avg_low = unique_sessions.merge(
-        df_range[['date', 'range_obs_time', 'low_value']].drop_duplicates(),
-        on=['date', 'range_obs_time', 'low_value']
-    )['low_value'].mean()
-    st.metric("Avg Low", f"{avg_low:.2f}")
+st.metric("Total Sessions", f"{total_sessions:,}")
 
 st.markdown("---")
 
@@ -396,6 +383,9 @@ final_check_time = check_times[-1]
 df_final = df_range[df_range['check_obs_time'] == final_check_time]
 sessions_final = df_final.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
 
+# Add first_break categorization for the sample data table
+sessions_final['first_break'] = sessions_final.apply(categorize_first_break, axis=1)
+
 # Formation Time Distributions
 st.header("📍 Formation Time Distributions")
 
@@ -443,9 +433,21 @@ st.markdown("---")
 
 # Data Table
 st.header("📋 Sample Data")
-sample_df = sessions_final[['date', 'high_value', 'high_time', 'low_value', 'low_time', 
-                            'high_broken', 'high_break_time', 'low_broken', 'low_break_time', 
-                            'first_break']].head(20).copy()
+
+# Select only columns that exist
+available_cols = ['date', 'high_value', 'high_time', 'low_value', 'low_time']
+if 'high_broken' in sessions_final.columns:
+    available_cols.append('high_broken')
+if 'high_break_time' in sessions_final.columns:
+    available_cols.append('high_break_time')
+if 'low_broken' in sessions_final.columns:
+    available_cols.append('low_broken')
+if 'low_break_time' in sessions_final.columns:
+    available_cols.append('low_break_time')
+if 'first_break' in sessions_final.columns:
+    available_cols.append('first_break')
+
+sample_df = sessions_final[available_cols].head(20).copy()
 sample_df['date'] = sample_df['date'].dt.date
 st.dataframe(sample_df, use_container_width=True)
 
