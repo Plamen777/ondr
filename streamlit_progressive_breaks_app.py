@@ -254,14 +254,7 @@ if break_prob_data:
 
 st.markdown("---")
 
-# Which Breaks First Analysis
-st.header("2️⃣ Which Extremity Breaks First?")
-
-# Analyze at the final check time
-final_check_time = check_times[-1]
-df_final = df_range[df_range['check_obs_time'] == final_check_time]
-sessions_final = df_final.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
-
+# Helper function for categorizing breaks
 def categorize_first_break(row):
     """Determine which broke first"""
     high_broke = row['high_broken']
@@ -288,63 +281,120 @@ def categorize_first_break(row):
                 return 'Both Break Same Time'
         return 'Both Break (Unknown Order)'
 
-sessions_final['first_break'] = sessions_final.apply(categorize_first_break, axis=1)
+# Which Breaks First Analysis - OVER TIME
+st.header("2️⃣ Which Extremity Breaks First Over Time")
+st.markdown(f"**Track which extremity breaks as time progresses from {selected_range_time.strftime('%H:%M')}**")
 
-# Count occurrences
-break_counts = sessions_final['first_break'].value_counts()
-total = len(sessions_final)
+# Calculate breakdown at each check time
+breakdown_over_time = []
 
-# Calculate percentages
-high_first = break_counts.get('High Breaks First', 0) + break_counts.get('High Breaks (Only)', 0)
-low_first = break_counts.get('Low Breaks First', 0) + break_counts.get('Low Breaks (Only)', 0)
-both_hold = break_counts.get('Both Hold', 0)
+for check_time in check_times:
+    df_check = df_range[df_range['check_obs_time'] == check_time]
+    sessions_check = df_check.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
+    
+    if len(sessions_check) > 0:
+        # Categorize each session
+        sessions_check['first_break'] = sessions_check.apply(categorize_first_break, axis=1)
+        
+        # Count
+        total = len(sessions_check)
+        high_first = (sessions_check['first_break'] == 'High Breaks First').sum() + (sessions_check['first_break'] == 'High Breaks (Only)').sum()
+        low_first = (sessions_check['first_break'] == 'Low Breaks First').sum() + (sessions_check['first_break'] == 'Low Breaks (Only)').sum()
+        both_hold = (sessions_check['first_break'] == 'Both Hold').sum()
+        
+        high_first_pct = (high_first / total) * 100
+        low_first_pct = (low_first / total) * 100
+        both_hold_pct = (both_hold / total) * 100
+        
+        breakdown_over_time.append({
+            'check_time': check_time,
+            'time_str': check_time.strftime('%H:%M'),
+            'high_first_pct': high_first_pct,
+            'low_first_pct': low_first_pct,
+            'both_hold_pct': both_hold_pct,
+            'total': total
+        })
 
-high_first_pct = (high_first / total) * 100
-low_first_pct = (low_first / total) * 100
-both_hold_pct = (both_hold / total) * 100
-
-# Display metrics
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("High Breaks First/Only", f"{high_first_pct:.1f}%", 
-             help=f"{high_first} out of {total} sessions")
-with col2:
-    st.metric("Low Breaks First/Only", f"{low_first_pct:.1f}%",
-             help=f"{low_first} out of {total} sessions")
-with col3:
-    st.metric("Both Hold", f"{both_hold_pct:.1f}%",
-             help=f"{both_hold} out of {total} sessions")
-
-# Bar chart
-fig_first = go.Figure()
-
-categories = ['High Breaks First/Only', 'Low Breaks First/Only', 'Both Hold']
-values = [high_first_pct, low_first_pct, both_hold_pct]
-colors = ['#e74c3c', '#2ecc71', '#3498db']
-
-fig_first.add_trace(go.Bar(
-    x=categories,
-    y=values,
-    marker_color=colors,
-    text=[f"{v:.1f}%" for v in values],
-    textposition='auto'
-))
-
-fig_first.update_layout(
-    title=f"Which Extremity Breaks First (by {final_check_time.strftime('%H:%M')})",
-    yaxis_title="Percentage (%)",
-    yaxis_range=[0, 100],
-    height=400,
-    showlegend=False
-)
-
-st.plotly_chart(fig_first, use_container_width=True)
-
-st.info(f"💡 **Analysis at {final_check_time.strftime('%H:%M')}:** Of ranges set at {selected_range_time.strftime('%H:%M')}, " +
-       f"{high_first_pct:.1f}% had high break first/only, {low_first_pct:.1f}% had low break first/only, " +
-       f"and {both_hold_pct:.1f}% still held.")
+if breakdown_over_time:
+    breakdown_df = pd.DataFrame(breakdown_over_time)
+    
+    # Create LINE chart (not stacked area)
+    fig_breakdown = go.Figure()
+    
+    # Both Hold line (starts at 100%, decreases)
+    fig_breakdown.add_trace(go.Scatter(
+        x=breakdown_df['time_str'],
+        y=breakdown_df['both_hold_pct'],
+        mode='lines+markers',
+        name='Both Hold %',
+        line=dict(color='#3498db', width=3),
+        marker=dict(size=8),
+        hovertemplate='<b>%{x}</b><br>Both Hold: %{y:.1f}%<extra></extra>'
+    ))
+    
+    # High Breaks First line (starts at 0%, increases)
+    fig_breakdown.add_trace(go.Scatter(
+        x=breakdown_df['time_str'],
+        y=breakdown_df['high_first_pct'],
+        mode='lines+markers',
+        name='High Breaks First/Only %',
+        line=dict(color='#e74c3c', width=3),
+        marker=dict(size=8),
+        hovertemplate='<b>%{x}</b><br>High First: %{y:.1f}%<extra></extra>'
+    ))
+    
+    # Low Breaks First line (starts at 0%, increases)
+    fig_breakdown.add_trace(go.Scatter(
+        x=breakdown_df['time_str'],
+        y=breakdown_df['low_first_pct'],
+        mode='lines+markers',
+        name='Low Breaks First/Only %',
+        line=dict(color='#2ecc71', width=3),
+        marker=dict(size=8),
+        hovertemplate='<b>%{x}</b><br>Low First: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig_breakdown.update_layout(
+        title=f"Which Extremity Breaks First - Evolution from {selected_range_time.strftime('%H:%M')}",
+        xaxis_title="Check Time",
+        yaxis_title="Percentage (%)",
+        yaxis_range=[0, 100],
+        hovermode='x unified',
+        height=500,
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    st.plotly_chart(fig_breakdown, use_container_width=True)
+    
+    # Show metrics at final time
+    final_row = breakdown_df.iloc[-1]
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(f"High Breaks (by {final_row['time_str']})", f"{final_row['high_first_pct']:.1f}%")
+    with col2:
+        st.metric(f"Low Breaks (by {final_row['time_str']})", f"{final_row['low_first_pct']:.1f}%")
+    with col3:
+        st.metric(f"Both Hold (at {final_row['time_str']})", f"{final_row['both_hold_pct']:.1f}%")
+    
+    st.info(f"💡 **Reading the chart:** Blue line starts at 100% (all ranges holding). " +
+           f"As time progresses, red line (high breaks) and green line (low breaks) increase. " +
+           f"Shows which extremity tends to break first.")
+else:
+    st.warning("No data for breakdown analysis")
 
 st.markdown("---")
+
+# Get final check time data for formation distributions and table
+final_check_time = check_times[-1]
+df_final = df_range[df_range['check_obs_time'] == final_check_time]
+sessions_final = df_final.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
 
 # Formation Time Distributions
 st.header("📍 Formation Time Distributions")
