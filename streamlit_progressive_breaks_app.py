@@ -383,7 +383,7 @@ if break_prob_data:
         y=break_df['high_broken_pct'],
         mode='lines+markers',
         name='High Broken %',
-        line=dict(color='#e74c3c', width=3),
+        line=dict(color='#2ecc71', width=3),  # Green for high breaks (bullish)
         marker=dict(size=8),
         hovertemplate='<b>%{x}</b><br>High Broken: %{y:.1f}%<extra></extra>'
     ))
@@ -393,7 +393,7 @@ if break_prob_data:
         y=break_df['low_broken_pct'],
         mode='lines+markers',
         name='Low Broken %',
-        line=dict(color='#2ecc71', width=3),
+        line=dict(color='#e74c3c', width=3),  # Red for low breaks (bearish)
         marker=dict(size=8),
         hovertemplate='<b>%{x}</b><br>Low Broken: %{y:.1f}%<extra></extra>'
     ))
@@ -541,7 +541,7 @@ if breakdown_over_time:
         y=breakdown_df['high_of_breaks'],
         mode='lines+markers',
         name='High Breaks First',
-        line=dict(color='#e74c3c', width=3),
+        line=dict(color='#2ecc71', width=3),  # Green for high breaks (bullish)
         marker=dict(size=8),
         hovertemplate='<b>%{x}</b><br>High First: %{y:.1f}% of breaks<extra></extra>'
     ))
@@ -552,7 +552,7 @@ if breakdown_over_time:
         y=breakdown_df['low_of_breaks'],
         mode='lines+markers',
         name='Low Breaks First',
-        line=dict(color='#2ecc71', width=3),
+        line=dict(color='#e74c3c', width=3),  # Red for low breaks (bearish)
         marker=dict(size=8),
         hovertemplate='<b>%{x}</b><br>Low First: %{y:.1f}% of breaks<extra></extra>'
     ))
