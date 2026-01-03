@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Streamlit App for Progressive Range Analysis with Break Tracking
-Shows cumulative break probability and which extremity breaks first
+Enhanced UI/UX with comprehensive break statistics and visualizations
 """
 
 import streamlit as st
@@ -12,13 +12,13 @@ import os
 
 # Page config
 st.set_page_config(
-    page_title="Progressive Range with Breaks",
+    page_title="Progressive Range Analysis",
     page_icon="📊",
     layout="wide"
 )
 
 st.title("📊 Progressive Range Analysis with Break Tracking")
-st.markdown("Analyze expanding ranges and track when/which extremity breaks first")
+st.markdown("Analyze expanding ranges (16:00 → observation time) and track when/which extremity breaks first")
 
 # Load data
 @st.cache_data
@@ -58,13 +58,18 @@ def time_to_minutes(t):
         minutes += 24 * 60
     return minutes
 
-# Sidebar - Range Observation Time (when range was "set")
-st.sidebar.header("🕐 Range Set Time")
+# ===========================
+# SIDEBAR FILTERS
+# ===========================
+st.sidebar.header("🔍 Filters")
+
+# Range Observation Time
+st.sidebar.subheader("🕐 Range Set Time")
 st.sidebar.markdown("**When was the range established?**")
 
 available_range_times = sorted(df['range_obs_time'].unique(), key=time_to_minutes)
 
-# Initialize session state for persistent filters
+# Initialize session state
 if 'selected_range_time' not in st.session_state:
     st.session_state.selected_range_time = available_range_times[3] if len(available_range_times) > 3 else available_range_times[0]
 
@@ -73,21 +78,51 @@ selected_range_time = st.sidebar.selectbox(
     options=available_range_times,
     format_func=lambda t: t.strftime('%H:%M'),
     index=available_range_times.index(st.session_state.selected_range_time) if st.session_state.selected_range_time in available_range_times else 0,
-    help="The time when the range (high/low) was established",
-    key='range_time_selector'
+    help="The time when the range (high/low) was established"
 )
-
-# Update session state
 st.session_state.selected_range_time = selected_range_time
 
-st.sidebar.info(f"**Range set at:** {selected_range_time.strftime('%H:%M')}")
+st.sidebar.success(f"**Range:** 16:00 → {selected_range_time.strftime('%H:%M')}")
 
 # Filter by range observation time
 df_range = df[df['range_obs_time'] == selected_range_time].copy()
 
-# Sidebar - Formation Time Filters
-st.sidebar.header("🔍 Formation Time Filters")
-st.sidebar.markdown("Filter by **when** high/low formed within the range")
+st.sidebar.markdown("---")
+
+# Quick Time Window Filter
+st.sidebar.subheader("⚡ Quick Time Window")
+
+# Window size
+if 'window_minutes' not in st.session_state:
+    st.session_state.window_minutes = 30
+
+window_minutes = st.sidebar.number_input(
+    "Window Size (±minutes)",
+    min_value=5,
+    max_value=300,
+    value=st.session_state.window_minutes,
+    step=5,
+    help="Set the time window before and after the center time (in minutes)"
+)
+st.session_state.window_minutes = window_minutes
+
+# Separate toggles for High and Low
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    use_quick_high = st.checkbox(
+        "Enable High",
+        value=st.session_state.get('use_quick_high', False),
+        help=f"Set High range to ±{window_minutes} min around center time"
+    )
+    st.session_state.use_quick_high = use_quick_high
+
+with col2:
+    use_quick_low = st.checkbox(
+        "Enable Low",
+        value=st.session_state.get('use_quick_low', False),
+        help=f"Set Low range to ±{window_minutes} min around center time"
+    )
+    st.session_state.use_quick_low = use_quick_low
 
 # Helper function to calculate range from center time and offset
 def calculate_time_range(center_time_str, offset_minutes):
@@ -107,79 +142,37 @@ def calculate_time_range(center_time_str, offset_minutes):
     
     return start_time, end_time
 
-# HIGH FORMATION FILTER
+# Show separator if any quick filter is enabled
+if use_quick_high or use_quick_low:
+    st.sidebar.markdown("---")
+
+# HIGH FILTER
 st.sidebar.subheader("🟢 High Formation Time")
-
-# Initialize session state for high filter mode
-if 'high_filter_mode' not in st.session_state:
-    st.session_state.high_filter_mode = 'manual'
-if 'high_center_time' not in st.session_state:
-    st.session_state.high_center_time = '20:00'
-if 'high_offset_minutes' not in st.session_state:
-    st.session_state.high_offset_minutes = 30
-
-high_filter_mode = st.sidebar.radio(
-    "High Filter Mode",
-    options=['manual', 'smart'],
-    format_func=lambda x: '📋 Manual Range' if x == 'manual' else '🎯 Smart +/- Range',
-    key='high_mode_radio',
-    horizontal=True
-)
-st.session_state.high_filter_mode = high_filter_mode
 
 available_high_times = sorted(df_range['high_time'].unique(), key=time_to_minutes)
 time_strings_high = [t.strftime('%H:%M') for t in available_high_times]
 
-if high_filter_mode == 'smart':
-    # Smart mode: Center time +/- offset
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        high_center_input = st.text_input(
-            "Center Time",
-            value=st.session_state.high_center_time,
-            help="e.g., 20:00",
-            key='high_center_input'
-        )
-        st.session_state.high_center_time = high_center_input
-    with col2:
-        high_offset_input = st.number_input(
-            "+/- Minutes",
-            min_value=5,
-            max_value=300,
-            value=st.session_state.high_offset_minutes,
-            step=5,
-            help="Range in minutes",
-            key='high_offset_input'
-        )
-        st.session_state.high_offset_minutes = high_offset_input
+if use_quick_high:
+    # Quick mode
+    if 'high_center_time' not in st.session_state:
+        st.session_state.high_center_time = '20:00'
     
-    # Calculate range
+    high_center_input = st.sidebar.text_input(
+        "High Center Time",
+        value=st.session_state.high_center_time,
+        help="e.g., 20:00"
+    )
+    st.session_state.high_center_time = high_center_input
+    
     try:
-        high_start_calc, high_end_calc = calculate_time_range(high_center_input, high_offset_input)
-        st.sidebar.success(f"📍 Range: {high_start_calc.strftime('%H:%M')} - {high_end_calc.strftime('%H:%M')}")
-        
-        # Find closest available times
-        high_start_minutes = time_to_minutes(high_start_calc)
-        high_end_minutes = time_to_minutes(high_end_calc)
-        
-        # Filter times within range
-        high_times_in_range = [t for t in available_high_times 
-                              if high_start_minutes <= time_to_minutes(t) <= high_end_minutes]
-        
-        if high_times_in_range:
-            high_start = high_times_in_range[0]
-            high_end = high_times_in_range[-1]
-        else:
-            # Fallback to full range
-            high_start = available_high_times[0]
-            high_end = available_high_times[-1]
+        high_start, high_end = calculate_time_range(high_center_input, window_minutes)
+        st.sidebar.success(f"🟢 High: {high_start.strftime('%H:%M')} - {high_end.strftime('%H:%M')}")
     except:
-        st.sidebar.error("❌ Invalid time format. Use HH:MM (e.g., 20:00)")
+        st.sidebar.error("❌ Invalid time format. Use HH:MM")
         high_start = available_high_times[0]
         high_end = available_high_times[-1]
 else:
-    # Manual mode: Start and End selectors
-    # Initialize session state for manual indices
+    # Manual mode
     if 'high_start_idx' not in st.session_state:
         st.session_state.high_start_idx = 0
     if 'high_end_idx' not in st.session_state:
@@ -207,6 +200,7 @@ else:
     
     high_start = available_high_times[high_start_idx]
     high_end = available_high_times[high_end_idx]
+    st.sidebar.info(f"🟢 High: {high_start.strftime('%H:%M')} - {high_end.strftime('%H:%M')}")
 
 # Apply high filter
 high_start_min = time_to_minutes(high_start)
@@ -215,81 +209,33 @@ df_range = df_range[
     df_range['high_time'].apply(lambda t: high_start_min <= time_to_minutes(t) <= high_end_min)
 ]
 
-st.sidebar.info(f"✅ High: {high_start.strftime('%H:%M')} - {high_end.strftime('%H:%M')}")
-
-# LOW FORMATION FILTER
+# LOW FILTER
 st.sidebar.subheader("🔴 Low Formation Time")
-
-# Initialize session state for low filter mode
-if 'low_filter_mode' not in st.session_state:
-    st.session_state.low_filter_mode = 'manual'
-if 'low_center_time' not in st.session_state:
-    st.session_state.low_center_time = '01:00'
-if 'low_offset_minutes' not in st.session_state:
-    st.session_state.low_offset_minutes = 30
-
-low_filter_mode = st.sidebar.radio(
-    "Low Filter Mode",
-    options=['manual', 'smart'],
-    format_func=lambda x: '📋 Manual Range' if x == 'manual' else '🎯 Smart +/- Range',
-    key='low_mode_radio',
-    horizontal=True
-)
-st.session_state.low_filter_mode = low_filter_mode
 
 available_low_times = sorted(df_range['low_time'].unique(), key=time_to_minutes)
 time_strings_low = [t.strftime('%H:%M') for t in available_low_times]
 
-if low_filter_mode == 'smart':
-    # Smart mode: Center time +/- offset
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        low_center_input = st.text_input(
-            "Center Time",
-            value=st.session_state.low_center_time,
-            help="e.g., 01:00",
-            key='low_center_input'
-        )
-        st.session_state.low_center_time = low_center_input
-    with col2:
-        low_offset_input = st.number_input(
-            "+/- Minutes",
-            min_value=5,
-            max_value=300,
-            value=st.session_state.low_offset_minutes,
-            step=5,
-            help="Range in minutes",
-            key='low_offset_input'
-        )
-        st.session_state.low_offset_minutes = low_offset_input
+if use_quick_low:
+    # Quick mode
+    if 'low_center_time' not in st.session_state:
+        st.session_state.low_center_time = '01:00'
     
-    # Calculate range
+    low_center_input = st.sidebar.text_input(
+        "Low Center Time",
+        value=st.session_state.low_center_time,
+        help="e.g., 01:00"
+    )
+    st.session_state.low_center_time = low_center_input
+    
     try:
-        low_start_calc, low_end_calc = calculate_time_range(low_center_input, low_offset_input)
-        st.sidebar.success(f"📍 Range: {low_start_calc.strftime('%H:%M')} - {low_end_calc.strftime('%H:%M')}")
-        
-        # Find closest available times
-        low_start_minutes = time_to_minutes(low_start_calc)
-        low_end_minutes = time_to_minutes(low_end_calc)
-        
-        # Filter times within range
-        low_times_in_range = [t for t in available_low_times 
-                             if low_start_minutes <= time_to_minutes(t) <= low_end_minutes]
-        
-        if low_times_in_range:
-            low_start = low_times_in_range[0]
-            low_end = low_times_in_range[-1]
-        else:
-            # Fallback to full range
-            low_start = available_low_times[0]
-            low_end = available_low_times[-1]
+        low_start, low_end = calculate_time_range(low_center_input, window_minutes)
+        st.sidebar.success(f"🔴 Low: {low_start.strftime('%H:%M')} - {low_end.strftime('%H:%M')}")
     except:
-        st.sidebar.error("❌ Invalid time format. Use HH:MM (e.g., 01:00)")
+        st.sidebar.error("❌ Invalid time format. Use HH:MM")
         low_start = available_low_times[0]
         low_end = available_low_times[-1]
 else:
-    # Manual mode: Start and End selectors
-    # Initialize session state for manual indices
+    # Manual mode
     if 'low_start_idx' not in st.session_state:
         st.session_state.low_start_idx = 0
     if 'low_end_idx' not in st.session_state:
@@ -317,6 +263,7 @@ else:
     
     low_start = available_low_times[low_start_idx]
     low_end = available_low_times[low_end_idx]
+    st.sidebar.info(f"🔴 Low: {low_start.strftime('%H:%M')} - {low_end.strftime('%H:%M')}")
 
 # Apply low filter
 low_start_min = time_to_minutes(low_start)
@@ -325,35 +272,313 @@ df_range = df_range[
     df_range['low_time'].apply(lambda t: low_start_min <= time_to_minutes(t) <= low_end_min)
 ]
 
-st.sidebar.info(f"✅ Low: {low_start.strftime('%H:%M')} - {low_end.strftime('%H:%M')}")
+# Show filtered count prominently
+st.sidebar.markdown("---")
+unique_sessions = df_range.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).size().reset_index(name='count')
+total_sessions = len(unique_sessions)
+total_days = df_range['date'].nunique()
+
+st.sidebar.metric("📊 Filtered Sessions", f"{total_sessions:,}")
+st.sidebar.metric("📅 Trading Days", f"{total_days:,}")
 
 # Check if we have data
 if len(df_range) == 0:
-    st.error("No data matches your filters!")
+    st.error("❌ No data matches your filters!")
     st.stop()
 
-# Get unique sessions (date + range_obs_time + high/low values uniquely identify a session)
-unique_sessions = df_range.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).size().reset_index(name='count')
-total_sessions = len(unique_sessions)
+# ===========================
+# MAIN CONTENT
+# ===========================
 
-# Key Metrics
-st.header("📊 Key Metrics")
-st.metric("Total Sessions", f"{total_sessions:,}")
+# Get check observation times
+check_times = sorted(df_range['check_obs_time'].unique(), key=time_to_minutes)
+
+# Get final check time data
+final_check_time = check_times[-1]
+df_final = df_range[df_range['check_obs_time'] == final_check_time]
+sessions_final = df_final.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
+
+# Calculate key stats for final time
+high_holds = (~sessions_final['high_broken']).sum()
+high_breaks = sessions_final['high_broken'].sum()
+low_holds = (~sessions_final['low_broken']).sum()
+low_breaks = sessions_final['low_broken'].sum()
+
+high_hold_pct = (high_holds / len(sessions_final) * 100) if len(sessions_final) > 0 else 0
+high_break_pct = (high_breaks / len(sessions_final) * 100) if len(sessions_final) > 0 else 0
+low_hold_pct = (low_holds / len(sessions_final) * 100) if len(sessions_final) > 0 else 0
+low_break_pct = (low_breaks / len(sessions_final) * 100) if len(sessions_final) > 0 else 0
+
+# 📈 Key Statistics
+st.header("📈 Key Statistics")
+st.markdown(f"**At observation time: {final_check_time.strftime('%H:%M')} | Sessions: {total_sessions:,}**")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric(
+        "High Hold %",
+        f"{high_hold_pct:.1f}%",
+        delta=f"{high_holds} days",
+        delta_color="normal"
+    )
+
+with col2:
+    st.metric(
+        "High Break %",
+        f"{high_break_pct:.1f}%",
+        delta=f"{high_breaks} days",
+        delta_color="inverse"
+    )
+
+with col3:
+    st.metric(
+        "Low Hold %",
+        f"{low_hold_pct:.1f}%",
+        delta=f"{low_holds} days",
+        delta_color="normal"
+    )
+
+with col4:
+    st.metric(
+        "Low Break %",
+        f"{low_break_pct:.1f}%",
+        delta=f"{low_breaks} days",
+        delta_color="inverse"
+    )
 
 st.markdown("---")
 
-# Break Probability Over Time
-st.header("📈 Break Probability Over Time")
-st.markdown(f"**Cumulative break % from {selected_range_time.strftime('%H:%M')} onwards**")
+# ⚡ Break Sequence Analysis
+st.header("⚡ Break Sequence Analysis")
+st.markdown("**Which level breaks first when both break?**")
 
-# Get check observation times (future times after range was set)
-check_times = sorted(df_range['check_obs_time'].unique(), key=time_to_minutes)
+# Helper function to convert time to comparable format
+def time_to_minutes_safe(t):
+    if pd.isna(t) or t is None:
+        return None
+    return time_to_minutes(t)
 
+# Calculate break sequences
+sessions_final['high_break_minutes'] = sessions_final['high_break_time'].apply(time_to_minutes_safe)
+sessions_final['low_break_minutes'] = sessions_final['low_break_time'].apply(time_to_minutes_safe)
+
+# Categorize each day
+def categorize_break(row):
+    high_broke = row['high_broken']
+    low_broke = row['low_broken']
+    high_time = row['high_break_minutes']
+    low_time = row['low_break_minutes']
+    
+    if not high_broke and not low_broke:
+        return 'Both Hold'
+    elif high_broke and not low_broke:
+        return 'Only High Breaks'
+    elif low_broke and not high_broke:
+        return 'Only Low Breaks'
+    else:  # Both broke
+        if high_time is not None and low_time is not None:
+            if high_time < low_time:
+                return 'High Breaks First'
+            elif low_time < high_time:
+                return 'Low Breaks First'
+            else:
+                return 'Both Break Same Time'
+        return 'Both Break (Unknown Order)'
+
+sessions_final['break_sequence'] = sessions_final.apply(categorize_break, axis=1)
+
+# Calculate statistics
+sequence_counts = sessions_final['break_sequence'].value_counts()
+sequence_pcts = (sequence_counts / len(sessions_final) * 100).round(2)
+
+# Display metrics
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    count = sequence_counts.get('Only High Breaks', 0)
+    pct = sequence_pcts.get('Only High Breaks', 0.0)
+    st.metric(
+        "🟢 Only High Breaks",
+        f"{pct:.1f}%",
+        delta=f"{count} days"
+    )
+
+with col2:
+    count = sequence_counts.get('Only Low Breaks', 0)
+    pct = sequence_pcts.get('Only Low Breaks', 0.0)
+    st.metric(
+        "🔴 Only Low Breaks",
+        f"{pct:.1f}%",
+        delta=f"{count} days"
+    )
+
+with col3:
+    # Calculate "Both Break %" - sum of all scenarios where both broke
+    both_break_categories = ['High Breaks First', 'Low Breaks First', 'Both Break Same Time', 'Both Break (Unknown Order)']
+    both_break_count = sum(sequence_counts.get(cat, 0) for cat in both_break_categories)
+    both_break_pct = (both_break_count / len(sessions_final) * 100) if len(sessions_final) > 0 else 0.0
+    st.metric(
+        "⚫ Both Break",
+        f"{both_break_pct:.1f}%",
+        delta=f"{both_break_count} days"
+    )
+
+with col4:
+    count = sequence_counts.get('Both Hold', 0)
+    pct = sequence_pcts.get('Both Hold', 0.0)
+    st.metric(
+        "🟦 Both Hold",
+        f"{pct:.1f}%",
+        delta=f"{count} days"
+    )
+
+st.markdown("---")
+
+# 🔄 Which Level Breaks First? Bar Chart
+st.header("🔄 Which Level Breaks First?")
+st.markdown(f"**Overall probability of which extremity gets taken out first | Sessions: {total_sessions:,}**")
+
+# Categorize first break
+def categorize_first_break(row):
+    high_broke = row['high_broken']
+    low_broke = row['low_broken']
+    high_time = row.get('high_break_minutes')
+    low_time = row.get('low_break_minutes')
+    
+    if not high_broke and not low_broke:
+        return 'Both Hold'
+    elif high_broke and not low_broke:
+        return 'High Breaks First'
+    elif low_broke and not high_broke:
+        return 'Low Breaks First'
+    else:  # Both broke - compare times
+        if high_time is not None and low_time is not None:
+            if high_time < low_time:
+                return 'High Breaks First'
+            elif low_time < high_time:
+                return 'Low Breaks First'
+            else:
+                return 'Both Break Same Time'
+        return 'Both Break (Unknown Order)'
+
+sessions_final['first_break'] = sessions_final.apply(categorize_first_break, axis=1)
+
+# Calculate statistics
+first_break_counts = sessions_final['first_break'].value_counts()
+first_break_pcts = (first_break_counts / len(sessions_final) * 100).round(2)
+
+# Filter to show only the breaking scenarios
+break_data = sessions_final[sessions_final['first_break'] != 'Both Hold']
+
+if len(break_data) > 0:
+    break_counts = break_data['first_break'].value_counts()
+    break_pcts = (break_counts / len(break_data) * 100).round(2)
+    
+    fig_first_break = go.Figure()
+    
+    # Define colors
+    colors_map = {
+        'High Breaks First': '#2ecc71',  # Green for High
+        'Low Breaks First': '#e74c3c',   # Red for Low
+        'Both Break Same Time': '#95a5a6'
+    }
+    
+    bar_colors = [colors_map.get(cat, '#95a5a6') for cat in break_counts.index]
+    
+    fig_first_break.add_trace(go.Bar(
+        x=break_counts.index,
+        y=break_pcts.values,
+        text=[f"{pct:.1f}%<br>({count} days)" for pct, count in zip(break_pcts.values, break_counts.values)],
+        textposition='outside',
+        marker=dict(
+            color=bar_colors,
+            line=dict(color='rgba(0,0,0,0.3)', width=2)
+        ),
+        hovertemplate='<b>%{x}</b><br>Percentage: %{y:.1f}%<br><extra></extra>'
+    ))
+    
+    fig_first_break.update_layout(
+        title=f"Which Level Breaks First? ({len(break_data)} days with at least one break)",
+        yaxis_title="Percentage of Breaking Days",
+        xaxis_title="First Break",
+        height=450,
+        yaxis_range=[0, max(break_pcts.values) * 1.2] if len(break_pcts) > 0 else [0, 100],
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig_first_break, use_container_width=True)
+    
+    # Summary
+    col1, col2 = st.columns(2)
+    with col1:
+        high_first_count = first_break_counts.get('High Breaks First', 0)
+        high_first_pct = first_break_pcts.get('High Breaks First', 0.0)
+        st.info(f"**🟢 High Breaks First:** {high_first_pct:.1f}% ({high_first_count}/{len(sessions_final)} days)")
+    with col2:
+        low_first_count = first_break_counts.get('Low Breaks First', 0)
+        low_first_pct = first_break_pcts.get('Low Breaks First', 0.0)
+        st.info(f"**🔴 Low Breaks First:** {low_first_pct:.1f}% ({low_first_count}/{len(sessions_final)} days)")
+
+st.markdown("---")
+
+# 📊 Cumulative Break % Over Time (BAR CHART)
+st.header("📊 Cumulative Break % Over Time")
+st.markdown(f"**Total % of ranges that broke (either direction) | Sessions: {total_sessions:,}**")
+
+# Calculate total break % at each check time
+total_break_data = []
+for check_time in check_times:
+    df_check = df_range[df_range['check_obs_time'] == check_time]
+    sessions_check = df_check.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
+    
+    total = len(sessions_check)
+    if total > 0:
+        at_least_one_broke = (sessions_check['high_broken'] | sessions_check['low_broken']).sum()
+        total_break_pct = (at_least_one_broke / total) * 100
+        
+        total_break_data.append({
+            'time_str': check_time.strftime('%H:%M'),
+            'total_break_pct': total_break_pct
+        })
+
+if total_break_data:
+    total_break_df = pd.DataFrame(total_break_data)
+    
+    fig_total_break = go.Figure()
+    
+    fig_total_break.add_trace(go.Bar(
+        x=total_break_df['time_str'],
+        y=total_break_df['total_break_pct'],
+        marker_color='#e67e22',
+        text=[f"{v:.1f}%" for v in total_break_df['total_break_pct']],
+        textposition='outside',
+        hovertemplate='<b>%{x}</b><br>Total Break: %{y:.1f}%<extra></extra>'
+    ))
+    
+    fig_total_break.update_layout(
+        title=f"Total % of Ranges That Broke Over Time",
+        xaxis_title="Check Time",
+        yaxis_title="Cumulative Break %",
+        yaxis_range=[0, 100],
+        height=450,
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig_total_break, use_container_width=True)
+    
+    st.caption(f"📈 Shows cumulative % of ranges where at least one level broke. Final: {total_break_df.iloc[-1]['total_break_pct']:.1f}%")
+
+st.markdown("---")
+
+# Break Probability Over Time (LINE CHART - existing)
+st.header("📈 Individual Break Probabilities Over Time")
+st.markdown(f"**High vs Low break probability | Sessions: {total_sessions:,}**")
+
+# Collect break probability data
 break_prob_data = []
 for check_time in check_times:
     df_check = df_range[df_range['check_obs_time'] == check_time]
-    
-    # Get unique sessions at this check time
     sessions_at_check = df_check.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
     
     total = len(sessions_at_check)
@@ -375,7 +600,7 @@ for check_time in check_times:
 if break_prob_data:
     break_df = pd.DataFrame(break_prob_data)
     
-    # Create LINE chart (not filled area)
+    # Create LINE chart
     fig_breaks = go.Figure()
     
     fig_breaks.add_trace(go.Scatter(
@@ -383,7 +608,7 @@ if break_prob_data:
         y=break_df['high_broken_pct'],
         mode='lines+markers',
         name='High Broken %',
-        line=dict(color='#2ecc71', width=3),  # Green for high breaks (bullish)
+        line=dict(color='#2ecc71', width=3),  # Green for high
         marker=dict(size=8),
         hovertemplate='<b>%{x}</b><br>High Broken: %{y:.1f}%<extra></extra>'
     ))
@@ -393,13 +618,13 @@ if break_prob_data:
         y=break_df['low_broken_pct'],
         mode='lines+markers',
         name='Low Broken %',
-        line=dict(color='#e74c3c', width=3),  # Red for low breaks (bearish)
+        line=dict(color='#e74c3c', width=3),  # Red for low
         marker=dict(size=8),
         hovertemplate='<b>%{x}</b><br>Low Broken: %{y:.1f}%<extra></extra>'
     ))
     
     fig_breaks.update_layout(
-        title=f"Cumulative Break Probability from {selected_range_time.strftime('%H:%M')}",
+        title=f"Individual Break Probabilities from {selected_range_time.strftime('%H:%M')}",
         xaxis_title="Check Time",
         yaxis_title="Cumulative Break %",
         yaxis_range=[0, 100],
@@ -416,194 +641,12 @@ if break_prob_data:
     )
     
     st.plotly_chart(fig_breaks, use_container_width=True)
-    
-    st.caption(f"📊 Shows cumulative % of ranges that broke by each check time. " +
-              f"Range was set at {selected_range_time.strftime('%H:%M')} (16:00 → {selected_range_time.strftime('%H:%M')})")
 
 st.markdown("---")
-
-# Helper function for categorizing breaks
-def categorize_first_break(row):
-    """Determine which broke first"""
-    high_broke = row['high_broken']
-    low_broke = row['low_broken']
-    high_time = row.get('high_break_time')
-    low_time = row.get('low_break_time')
-    
-    if not high_broke and not low_broke:
-        return 'Both Hold'
-    elif high_broke and not low_broke:
-        return 'High Breaks (Only)'
-    elif low_broke and not high_broke:
-        return 'Low Breaks (Only)'
-    else:  # Both broke
-        if pd.notna(high_time) and pd.notna(low_time):
-            high_min = time_to_minutes(high_time)
-            low_min = time_to_minutes(low_time)
-            
-            if high_min < low_min:
-                return 'High Breaks First'
-            elif low_min < high_min:
-                return 'Low Breaks First'
-            else:
-                return 'Both Break Same Time'
-        return 'Both Break (Unknown Order)'
-
-# Which Breaks First Analysis - OVER TIME
-st.header("2️⃣ Which Extremity Breaks First Over Time")
-st.markdown(f"**Track which extremity breaks as time progresses from {selected_range_time.strftime('%H:%M')}**")
-
-# Calculate breakdown at each check time
-breakdown_over_time = []
-
-for check_time in check_times:
-    df_check = df_range[df_range['check_obs_time'] == check_time]
-    sessions_check = df_check.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
-    
-    if len(sessions_check) > 0:
-        # Categorize each session
-        sessions_check['first_break'] = sessions_check.apply(categorize_first_break, axis=1)
-        
-        # Count
-        total = len(sessions_check)
-        high_first = (sessions_check['first_break'] == 'High Breaks First').sum() + (sessions_check['first_break'] == 'High Breaks (Only)').sum()
-        low_first = (sessions_check['first_break'] == 'Low Breaks First').sum() + (sessions_check['first_break'] == 'Low Breaks (Only)').sum()
-        both_hold = (sessions_check['first_break'] == 'Both Hold').sum()
-        
-        high_first_pct = (high_first / total) * 100
-        low_first_pct = (low_first / total) * 100
-        both_hold_pct = (both_hold / total) * 100
-        
-        breakdown_over_time.append({
-            'check_time': check_time,
-            'time_str': check_time.strftime('%H:%M'),
-            'high_first_pct': high_first_pct,
-            'low_first_pct': low_first_pct,
-            'both_hold_pct': both_hold_pct,
-            'total': total
-        })
-
-if breakdown_over_time:
-    breakdown_df = pd.DataFrame(breakdown_over_time)
-    
-    # Calculate additional metrics
-    breakdown_df['total_break_pct'] = 100 - breakdown_df['both_hold_pct']
-    
-    # Calculate percentage of breaks that are high vs low (normalized to 100%)
-    breakdown_df['high_of_breaks'] = breakdown_df.apply(
-        lambda row: (row['high_first_pct'] / (row['high_first_pct'] + row['low_first_pct']) * 100) 
-        if (row['high_first_pct'] + row['low_first_pct']) > 0 else 0, 
-        axis=1
-    )
-    breakdown_df['low_of_breaks'] = breakdown_df.apply(
-        lambda row: (row['low_first_pct'] / (row['high_first_pct'] + row['low_first_pct']) * 100) 
-        if (row['high_first_pct'] + row['low_first_pct']) > 0 else 0, 
-        axis=1
-    )
-    
-    # CHART 1: Total Cumulative Break %
-    st.subheader("📊 Cumulative Break % Over Time")
-    fig_total_break = go.Figure()
-    
-    fig_total_break.add_trace(go.Scatter(
-        x=breakdown_df['time_str'],
-        y=breakdown_df['total_break_pct'],
-        mode='lines+markers',
-        name='Total Break %',
-        line=dict(color='#e67e22', width=3),
-        marker=dict(size=8),
-        hovertemplate='<b>%{x}</b><br>Total Broke: %{y:.1f}%<extra></extra>'
-    ))
-    
-    fig_total_break.update_layout(
-        title=f"Total % of Ranges That Broke (from {selected_range_time.strftime('%H:%M')})",
-        xaxis_title="Check Time",
-        yaxis_title="Cumulative Break %",
-        yaxis_range=[0, 100],
-        hovermode='x unified',
-        height=400,
-        showlegend=False
-    )
-    
-    st.plotly_chart(fig_total_break, use_container_width=True)
-    
-    st.caption("📈 Shows the cumulative percentage of ranges that broke (either high or low)")
-    
-    st.markdown("---")
-    
-    # CHART 2: High First vs Low First (of the breaks that occurred)
-    st.subheader("⚖️ Which Extremity Breaks First (Of Ranges That Broke)")
-    fig_which_first = go.Figure()
-    
-    # High First line
-    fig_which_first.add_trace(go.Scatter(
-        x=breakdown_df['time_str'],
-        y=breakdown_df['high_of_breaks'],
-        mode='lines+markers',
-        name='High Breaks First',
-        line=dict(color='#2ecc71', width=3),  # Green for high breaks (bullish)
-        marker=dict(size=8),
-        hovertemplate='<b>%{x}</b><br>High First: %{y:.1f}% of breaks<extra></extra>'
-    ))
-    
-    # Low First line
-    fig_which_first.add_trace(go.Scatter(
-        x=breakdown_df['time_str'],
-        y=breakdown_df['low_of_breaks'],
-        mode='lines+markers',
-        name='Low Breaks First',
-        line=dict(color='#e74c3c', width=3),  # Red for low breaks (bearish)
-        marker=dict(size=8),
-        hovertemplate='<b>%{x}</b><br>Low First: %{y:.1f}% of breaks<extra></extra>'
-    ))
-    
-    fig_which_first.update_layout(
-        title=f"High First vs Low First (Normalized to 100%)",
-        xaxis_title="Check Time",
-        yaxis_title="Percentage of Breaks (%)",
-        yaxis_range=[0, 100],
-        hovermode='x unified',
-        height=400,
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    st.plotly_chart(fig_which_first, use_container_width=True)
-    
-    st.caption("⚖️ Of the ranges that broke, this shows the split between high breaking first vs low breaking first (adds to 100%)")
-    
-    # Show metrics at final time
-    final_row = breakdown_df.iloc[-1]
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(f"Total Break % (at {final_row['time_str']})", f"{final_row['total_break_pct']:.1f}%")
-    with col2:
-        st.metric(f"High First (of breaks)", f"{final_row['high_of_breaks']:.1f}%")
-    with col3:
-        st.metric(f"Low First (of breaks)", f"{final_row['low_of_breaks']:.1f}%")
-    
-    st.info(f"💡 **Reading:** Chart 1 shows what % broke overall. Chart 2 shows the directional bias of those breaks (High vs Low).")
-else:
-    st.warning("No data for breakdown analysis")
-
-st.markdown("---")
-
-# Get final check time data for formation distributions and table
-final_check_time = check_times[-1]
-df_final = df_range[df_range['check_obs_time'] == final_check_time]
-sessions_final = df_final.groupby(['date', 'range_obs_time', 'high_value', 'low_value']).first().reset_index()
-
-# Add first_break categorization for the sample data table
-sessions_final['first_break'] = sessions_final.apply(categorize_first_break, axis=1)
 
 # Formation Time Distributions
 st.header("📍 Formation Time Distributions")
+st.markdown(f"**When do highs and lows form? | Sessions: {total_sessions:,}**")
 
 col1, col2 = st.columns(2)
 
@@ -649,6 +692,7 @@ st.markdown("---")
 
 # Data Table
 st.header("📋 Sample Data")
+st.markdown(f"**First 20 sessions | Total: {total_sessions:,}**")
 
 # Select only columns that exist
 available_cols = ['date', 'high_value', 'high_time', 'low_value', 'low_time']
